@@ -5,7 +5,7 @@
 
 using namespace std;
 
-void mark_multiples_of(unsigned n, std::vector<bool> &arr)
+void mark_multiples_of(unsigned n, vector<bool> &arr)
 {
     for (int i = n * 2u; i < arr.size(); i += n)
     {
@@ -45,6 +45,7 @@ vector<bool> sieve_eratosthenes_seq(unsigned n)
         }
     }
     print_primes(is_prime);
+    cout<<"XD";
     return is_prime;
 }
 
@@ -61,7 +62,6 @@ vector<int> sieve_eratosthenes_parrarel(int n)
     // Find the primes numbers <= sqrt(n) thanks
     // to a sequential sieve of Eratosthenes
     vector<bool> primes = sieve_eratosthenes_seq(end);
-
     vector<bool> is_prime(n + 1u);
     for (unsigned i = 0u; i < n + 1u; ++i)
     {
@@ -74,14 +74,12 @@ vector<int> sieve_eratosthenes_parrarel(int n)
     // the maximum number of concurrent threads allowed
     // by the implementation and on the total number of
     // elements in primes
-    std::size_t nb_primes_per_thread =
+    size_t nb_primes_per_thread =
         (size_t)(ceil(
             (float)(primes.size()) /
             (float)(thread::hardware_concurrency())));
 
-    for (size_t first = 0u;
-         first < primes.size();
-         first += nb_primes_per_thread)
+    for (size_t first = 0u; first < primes.size(); first += nb_primes_per_thread)
     {
         unsigned last = min(first + nb_primes_per_thread, primes.size());
         // Spawn a thread to strike out the multiples
