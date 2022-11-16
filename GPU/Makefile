@@ -1,6 +1,6 @@
-all: clean build
+all: build
 
 build: 
-	nvcc -o example example.cu
+	nvcc -o sieve sieve.cu
 clean:
-	 rm  example
+	 rm  sieve
