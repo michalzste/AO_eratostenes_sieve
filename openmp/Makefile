@@ -1,6 +1,6 @@
 all: clean build
 
 build: 
-	g++ -o sieve sieve.cpp 
+	g++ -fopenmp -o sieve sieve.cpp 
 clean:
 	 rm  sieve
