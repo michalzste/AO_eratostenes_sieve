@@ -1,5 +1,11 @@
+#include <atomic>
+#include <chrono>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <sys/time.h>
+#include <pthread.h>
+#include <thread>
 
 #define BYTE unsigned char
 #define THREADS 64
@@ -71,18 +77,48 @@ __global__ void sieveChunk(BYTE *isPrimeArrays, size_t isPrimeBytes, uint64_t de
 
 
 /**
- * @brief Funkcja która zarządza pojedynczym chunkiem
+ * @brief Funkcja która zarządza chunkami
+ * 
+ * @param chunkSize rozmiar chunka
+ * @param chunkCount liczba chunków
+ * @param chunkOffset offset chunków
+ * @param chunkPrimeCount max ilość liczb pierwszych w chanku
+ * @param seedPrimes potencjalne liczby pierwsze
+ * @param seedPrimeCount  ilość potencjalnych liczb pierwszych
+ * @param chunkPrimeCounts tu zapisywana jest informacja ile liczb pierwszych udało się znaleźć
+ * @param processedChunks dodatkowa informacja jak wiele chunków zostało zakończonych
  */
-void processChunks() {
+void processChunks(uint64_t chunkSize, uint64_t chunkCount, uint64_t chunkOffset, 
+                    uint64_t chunkPrimeCount, uint64_t *seedPrimes, uint64_t seedPrimeCount, 
+                    uint64_t *chunkPrimeCounts, atomic<uint64_t> *processedChunks) {
 
-  // liczba chunków
+  // liczba chunków: liczba wątków * liczba bloków na wątek
   uint64_t kernelChunkCount = THREADS * BLOCKS;
 
-  // liczba znalezionych liczb pierwszych na chunk
-  uint64_t *primeCountsGpu;
-  cudaMalloc(&primeCountsGpu, sizeof(uint64_t) * kernelChunkCount);
+  // liczba wywołań jądra
+  uint64_t invocations = 1;
 
-  // liczba przetworzonych chunków
+  // korekcja liczby wywołań
+  if (chunkCount < kernelChunkCount) 
+    kernelChunkCount = chunkCount;
+  else 
+    invocations = chunkCount / kernelChunkCount + ((chunkCount % kernelChunkCount) > 0);
+
+  uint64_t *seedPrimesLocal;
+  size_t seedPrimesSize = sizeof(uint64_t) * seedPrimeCount;
+
+  // alokacja pamięci
+  cudaMalloc(&seedPrimesLocal, seedPrimesSize);
+
+  // alokacja pamięci na wynikową tablicę
+  size_t isPrimeBytes;
+  BYTE *isPrimeArrays = createBitearrays(chunkPrimeCount, &isPrimeBytes, kernelChunkCount);
+
+  // alokacja pamięci na liczbę znalezionych liczb pierwszych
+  uint64_t *primeCounts;
+  cudaMalloc(&primeCounts, sizeof(uint64_t) * kernelChunkCount);
+
+  // liczba zakończonych chunków
   uint64_t totalChunksProcessed = 0;
 }
 
