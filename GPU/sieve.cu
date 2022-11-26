@@ -2,6 +2,8 @@
 #include <stdint.h>
 
 #define BYTE unsigned char
+#define THREADS 64
+#define BLOCKS 256
 
 
 /**
@@ -38,13 +40,52 @@ inline BYTE *createBitearrays(size_t elements, size_t *bytesPerBitarray, size_t 
  * @return __global__ 
  */
 __global__ void sieveChunk(BYTE *isPrimeArrays, size_t isPrimeBytes, uint64_t defaultPrimeCount, 
-                           uint64_t *primeCounts, uint64_t chunkCount) {
+                           uint64_t *primeCounts, uint64_t chunkCount, uint64_t chunkOffset, uint64_t chunkSize) {
 
   // index konkretnego wywołania
   uint64_t index = blockIdx.x * blockDim.x + threadIdx.x;
   
   if (index >= chunkCount) return;
+
+  //index przesunięcia tablicy
+  uint64_t offSetIndex = index + chunkOffset;
+
+  //nowy wskaźnik na głóną tablicę z liczbami pierwszymi
+  BYTE *isPrime = isPrimeArrays + index * isPrimeBytes;
+
+  //zakresy początku oraz końca przesunięcia tablicy
+  uint64_t low = (offSetIndex + 1) * chunkSize;
+  uint64_t high = low + chunkSize;
+
+  //sprawdzamy czy nasze wartości graniczne przesunięcia tablicy nie są liczbami parzystymi w takim wypadku inkrementujemy je
+  if(low % 2 == 0)
+    low++;
+
+  if(high % 2 == 0)
+    high++;
+
+  //zerujemy komórki w powiększonej tablicy 
+  for(size_t i = 0; i < isPrimeBytes; i++)
+    isPrime[i] = 0;
 }
+
+
+/**
+ * @brief Funkcja która zarządza pojedynczym chunkiem
+ */
+void processChunks() {
+
+  // liczba chunków
+  uint64_t kernelChunkCount = THREADS * BLOCKS;
+
+  // liczba znalezionych liczb pierwszych na chunk
+  uint64_t *primeCountsGpu;
+  cudaMalloc(&primeCountsGpu, sizeof(uint64_t) * kernelChunkCount);
+
+  // liczba przetworzonych chunków
+  uint64_t totalChunksProcessed = 0;
+}
+
 
 int main() {
   printf("%d\n", 0);

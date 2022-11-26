@@ -1,7 +1,9 @@
 #include <iostream>
 #include <vector>
 #include <math.h>
+#include <chrono>
 using namespace std;
+using namespace std::chrono;
 
 void mark_multiples_of(unsigned n, std::vector<bool> &arr)
 {
@@ -15,7 +17,6 @@ void print_primes(vector<bool> &marked_primes)
 {
     for (unsigned i = 3u; i < marked_primes.size(); i++)
     {
-        // cout << marked_primes[i];
         if (marked_primes[i] == true)
         {
             cout << i << endl;
@@ -25,15 +26,10 @@ void print_primes(vector<bool> &marked_primes)
 
 vector<bool> primeSieve(unsigned n)
 {
-    // initialize array
     vector<bool> is_prime(n, true);
 
-    // Strike out the multiples of 2 so that
-    // the following loop can be faster
     mark_multiples_of(2u, is_prime);
 
-    // Strike out the multiples of the prime
-    // number between 3 and end
     unsigned end = (unsigned)floor(sqrt(n));
     for (unsigned i = 3u; i <= end; i += 2u)
     {
@@ -42,7 +38,6 @@ vector<bool> primeSieve(unsigned n)
             mark_multiples_of(i, is_prime);
         }
     }
-    print_primes(is_prime);
     return is_prime;
 }
 
@@ -51,7 +46,16 @@ int main(int argc, char const *argv[])
     unsigned n;
     cin >> n;
 
-    primeSieve(n);
+    auto start = high_resolution_clock::now();
+    vector<bool> markedPrimes =  primeSieve(n);
+    auto stop = high_resolution_clock::now();
+    vector<bool> primes;
+    for (int i = 2;i<markedPrimes.size(); i++)
+    {
+        if(markedPrimes[i]) primes.push_back(i);
+    }
+    
+    cout << "amount of primes: " << primes.size() << " found in time: " <<  duration_cast<milliseconds>(stop - start).count() << "ms" << endl;
 
     return 0;
 }
