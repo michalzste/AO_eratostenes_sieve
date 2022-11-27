@@ -132,13 +132,19 @@ __global__ void sieveChunk(unsigned char *isPrimeArrays, size_t isPrimeBytes,
     }
 
     uint64_t j = lowMultiple;
-
+    //sprawdzamy czy nasza zmienna j nie jest liczbą patrzystą w takim wypadku dodajemy do niej liczbę seedPrimes[i], która napewno jest liczbą nieparzystą
+    if(lowMultiple % 2 == 0) {
+      j += seedPrimes[i];
+    }
+    //zaczynamy pętlę w której będziemy wykreślać wszystkie wielokrotności liczby pierwszej seedPrimes[i]
     while (j <= high)
     {
       uint64_t j_idx = (j - low) / 2;
       size_t byte = j_idx / 8;
+      //tworzymy maskę przesunięciem bitowym aby sprawdzić potencjalną liczbę pierwszą
       size_t offset_mask = 1 << (7 - (j_idx % 8));
       unsigned char potential_new_value = isPrime[byte] | offset_mask;
+      // warunkowa dekrementacja primeCount, sprawdzenie czy liczba potencjalna jest liczbą pierwszą
       if ((isPrime[byte] & offset_mask) == 0)
       {
         primeCount--;
@@ -163,68 +169,69 @@ __global__ void sieveChunk(unsigned char *isPrimeArrays, size_t isPrimeBytes,
  * @param chunkPrimeCounts tu zapisywana jest informacja ile liczb pierwszych udało się znaleźć
  * @param processedChunks dodatkowa informacja jak wiele chunków zostało zakończonych
  */
-void processChunks(uint64_t chunkSize, uint64_t chunkCount, uint64_t chunkOffset, uint64_t chunkPrimeCount, 
-                  uint64_t *seedPrimes, uint64_t seedPrimeCount, uint64_t *chunkPrimeCounts)
-{
-  // liczba chunków: liczba wątków * liczba bloków na wątek
-  uint64_t kernelChunkCount = THREADS * BLOCKS;
+void *processChunks(
+    uint64_t chunkSize,uint64_t chunkCount,
+    uint64_t chunkOffset,uint64_t chunkPrimeCount,
+    uint64_t *seedPrimes,uint64_t seedPrimeCount,
+    uint64_t *chunkPrimeCounts){
 
-  // liczba wywołań jądra
-  uint64_t invocations = 1;
-
-  // korekcja liczby wywołań
-  if (chunkCount < kernelChunkCount)
-    kernelChunkCount = chunkCount;
-  else
-    invocations = chunkCount / kernelChunkCount + ((chunkCount % kernelChunkCount) > 0);
-
-  uint64_t *seedPrimesLocal;
-  size_t seedPrimesSize = sizeof(uint64_t) * seedPrimeCount;
-
-  // alokacja pamięci
-  cudaMalloc(&seedPrimesLocal, seedPrimesSize);
-
-  // alokacja pamięci na wynikową tablicę
-  size_t isPrimeBytes;
-  unsigned char *isPrimeArrays = createBitearrays(chunkPrimeCount, &isPrimeBytes, kernelChunkCount);
-
-  // alokacja pamięci na liczbę znalezionych liczb pierwszych
-  uint64_t *primeCounts;
-  cudaMalloc(&primeCounts, sizeof(uint64_t) * kernelChunkCount);
-
-  // liczba zakończonych chunków
-  uint64_t totalChunksProcessed = 0;
-
-  for (uint64_t i = 0; i < invocations; i++)
-  {
-    // przesunięcie, które zwiększa się wraz z liczbą wątków
-    uint64_t offset = i * kernelChunkCount;
-    // zmienna przechoująca liczbę pozostałych wątków
-    uint64_t remainingChunks = chunkCount - offset;
-
-    // warunek sprawdzający czy liczba pozostałych wąktów nie większa od liczby maksymalnej wątków
-    if (remainingChunks > kernelChunkCount)
-    {
-      remainingChunks = kernelChunkCount;
+    // liczba chunków: liczba wątków * liczba bloków na wątek
+    uint64_t kernelChunkCount = THREADS * BLOCKS;
+    // liczba wywołań jądra
+    uint64_t invocations = 1;
+    // korekcja liczby wywołań
+    if (chunkCount < kernelChunkCount){
+        kernelChunkCount = chunkCount;
+    } 
+    else {
+        invocations = chunkCount / kernelChunkCount;
+        if((chunkCount % kernelChunkCount) > 0) invocations++;
     }
+    uint64_t *seedPrimesLocal;
+    size_t seedPrimesSize = sizeof(uint64_t) * seedPrimeCount;
+    // alokacja pamięci
+    cudaMalloc(&seedPrimesLocal, seedPrimesSize);
+    // kopiowanie danych do GPU
+    cudaMemcpy(seedPrimesLocal, seedPrimes, seedPrimesSize, cudaMemcpyHostToDevice);
 
-    offset += chunkOffset;
+    // alokacja pamięci na wynikową tablicę
+    size_t isPrimeBytes;
+    unsigned char *isPrimeArrays = createBitearrays(chunkPrimeCount, &isPrimeBytes, kernelChunkCount);
 
-    // Wywołanie nowego wątku
-    sieveChunk<<<THREADS, BLOCKS>>>(
-        isPrimeArrays, isPrimeBytes,
-        chunkPrimeCount, primeCounts,
-        seedPrimes, seedPrimeCount,
-        chunkSize, remainingChunks, offset);
+    // alokacja pamięci na liczbę znalezionych liczb pierwszych
+    uint64_t *primeCounts;
+    cudaMalloc(&primeCounts, sizeof(uint64_t) * kernelChunkCount);
 
-    // skopiowanie pamięci do cpu
-    cudaMemcpy(chunkPrimeCounts + totalChunksProcessed, primeCounts, sizeof(uint64_t) * remainingChunks, cudaMemcpyDeviceToHost);
-    totalChunksProcessed += remainingChunks;
-  }
+    // liczba przetworzonych chunków
+    uint64_t totalChunksProcessed = 0;
+    for (uint64_t i = 0; i < invocations; i++) {
+        // przesunięcie, które zwiększa się wraz z liczbą chunków
+        uint64_t offset = i * kernelChunkCount;
+        // zmienna przechoująca liczbę pozostałych chunków
+        uint64_t remainingChunks = chunkCount - offset;
+        // warunek sprawdzający czy liczba pozostałych chunków nie większa od liczby maksymalnej chunków
+        if (remainingChunks > kernelChunkCount) {
+            remainingChunks = kernelChunkCount;
+        }
+        offset += chunkOffset;
 
-  // zwolnienie pamięci 
-  cudaFree(isPrimeArrays);
-  cudaFree(seedPrimes);
+        // Konfiguracja jądra
+        sieveChunk<<<THREADS, BLOCKS>>>(
+            isPrimeArrays, isPrimeBytes,
+            chunkPrimeCount, primeCounts,
+            seedPrimesLocal, seedPrimeCount,
+            chunkSize, remainingChunks, offset
+        );
+
+        // skopiowanie pamięci do cpu
+        cudaMemcpy(chunkPrimeCounts + totalChunksProcessed, primeCounts, sizeof(uint64_t) * remainingChunks, cudaMemcpyDeviceToHost);
+        totalChunksProcessed += remainingChunks;
+    }
+    // zwolnienie pamięci 
+    cudaFree(isPrimeArrays);
+    cudaFree(seedPrimesLocal);
+
+    return NULL;
 }
 
 int main()
@@ -262,6 +269,7 @@ int main()
   if (upperBound < 50013184)
   { // umowna granica oplacalnosci inicjalizacji gpu
     // obliczenie za pomocą CPU, inicjalizacja obliczen na GPU zbyt kosztowna dla tego zakresu
+    std::cout<<"Count to: " << upperBound << std::endl;
     startingSieve(upperBound, &seedPrimes, &seedPrimeCount);
     foundPrimes = seedPrimeCount;
     free(seedPrimes);
