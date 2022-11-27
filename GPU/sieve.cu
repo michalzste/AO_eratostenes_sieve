@@ -1,14 +1,14 @@
-#include <atomic>
 #include <chrono>
 #include <stddef.h>
 #include <stdio.h>
+#include <iostream>
 #include <stdint.h>
 #include <sys/time.h>
-#include <pthread.h>
-#include <thread>
+
 
 #define THREADS 256
 #define BLOCKS 16
+
 
 inline unsigned char bitarray_get(unsigned char *bitarray, size_t index) {
     size_t byte = index / 8;
@@ -16,6 +16,30 @@ inline unsigned char bitarray_get(unsigned char *bitarray, size_t index) {
     return bitarray[byte] & offset_mask;
 }
 
+void startingSieve(uint64_t upperBound, uint64_t **primes, uint64_t *primeCount) {
+    unsigned char *is_prime = (unsigned char *) calloc(upperBound / 8 + ((upperBound % 8) > 1), 1);;
+    uint64_t total_primes = upperBound - 2;
+    for (uint64_t p = 2; (p * p) < upperBound; p++) {
+        if (bitarray_get(is_prime, p) == 0) {
+            for (uint64_t i = p * p; i < upperBound; i += p) {
+                if (bitarray_get(is_prime, i) == 0) {
+                    total_primes--;
+                    size_t byte = i / 8;
+                    size_t offset_mask = 1 << (7 - (i % 8));
+                    is_prime[byte] |= offset_mask;
+                }
+            }
+        }
+    }
+    *primeCount = total_primes;
+    *primes = (uint64_t *) malloc(sizeof(uint64_t) * total_primes);
+    size_t i = 0;
+    for (uint64_t p = 2; p < upperBound; p++) {
+        if (bitarray_get(is_prime, p) == 0) (*primes)[i++] = p;
+    }
+
+    free(is_prime);
+}
 
 /**
  * @brief Funkcja alokuje ciągły obszar pamięci na karcie graficznej o podanym rozmiarze
@@ -25,13 +49,13 @@ inline unsigned char bitarray_get(unsigned char *bitarray, size_t index) {
  * @param bytesPerBitarray liczba bajtów na tablicę bitów
  * @param bitarrays  liczba tablic bitów, które chcemy zaalokować
  * 
- * @return BYTE* 
+ * @return unsigned char* 
  */
-inline BYTE *createBitearrays(size_t elements, size_t *bytesPerBitarray, size_t bitarrays) {
+inline unsigned char *createBitearrays(size_t elements, size_t *bytesPerBitarray, size_t bitarrays) {
 
   // dodajemy potencjalny bajt, gdy liczba bitów nie jest podzielna przez 8
   *bytesPerBitarray = elements / 8 + ((elements % 8) > 1);  
-  BYTE *bitarraysMem;
+  unsigned char *bitarraysMem;
   cudaMalloc(&bitarraysMem, *bytesPerBitarray * bitarrays);
   return bitarraysMem;
 }
@@ -53,7 +77,7 @@ inline BYTE *createBitearrays(size_t elements, size_t *bytesPerBitarray, size_t 
  * @param seedCount ilość liczb pierwszych
  * @return __global__ 
  */
-__global__ void sieve_chunk_gpu(BYTE *isPrimeArrays, size_t isPrimeBytes,
+__global__ void sieve_chunk_gpu(unsigned char *isPrimeArrays, size_t isPrimeBytes,
                                 uint64_t defaultPrimeCount, uint64_t *primeCounts,
                                 uint64_t *seedPrimes, uint64_t seedCount,
                                 uint64_t chunkSize, uint64_t chunkCount, uint64_t chunkOffset) {
@@ -67,7 +91,7 @@ __global__ void sieve_chunk_gpu(BYTE *isPrimeArrays, size_t isPrimeBytes,
   uint64_t offSetIndex = index + chunkOffset;
 
   //nowy wskaźnik na główną tablicę z liczbami pierwszymi
-  BYTE *isPrime = isPrimeArrays + index * isPrimeBytes;
+  unsigned char *isPrime = isPrimeArrays + index * isPrimeBytes;
 
   //zakresy początku oraz końca przesunięcia tablicy
   uint64_t low = (offSetIndex + 1) * chunkSize;
@@ -103,10 +127,11 @@ __global__ void sieve_chunk_gpu(BYTE *isPrimeArrays, size_t isPrimeBytes,
       uint64_t j_idx = (j - low) / 2;
             size_t byte = j_idx / 8;
             size_t offset_mask = 1 << (7 - (j_idx % 8));
-            uint64_t is_set = (isPrime[byte] & offset_mask) == 0;
-            primeCount -= is_set;
-            BYTE potential_new_value = isPrime[byte] | offset_mask;
-            isPrime[byte] = is_set * potential_new_value + (1 - is_set) * isPrime[byte];
+            unsigned char potential_new_value = isPrime[byte] | offset_mask;
+            if((isPrime[byte] & offset_mask) == 0){
+                primeCount--;
+                isPrime[byte] = potential_new_value;
+            }
             j += seedPrimes[i] * 2;
     }
 
@@ -115,8 +140,6 @@ __global__ void sieve_chunk_gpu(BYTE *isPrimeArrays, size_t isPrimeBytes,
       primeCounts[index] = primeCount;
 }
 
-<<<<<<< HEAD
-=======
 
 /**
  * @brief Funkcja która zarządza chunkami
@@ -132,7 +155,7 @@ __global__ void sieve_chunk_gpu(BYTE *isPrimeArrays, size_t isPrimeBytes,
  */
 void processChunks(uint64_t chunkSize, uint64_t chunkCount, uint64_t chunkOffset, 
                     uint64_t chunkPrimeCount, uint64_t *seedPrimes, uint64_t seedPrimeCount, 
-                    uint64_t *chunkPrimeCounts, atomic<uint64_t> *processedChunks) {
+                    uint64_t *chunkPrimeCounts) {
 
   // liczba chunków: liczba wątków * liczba bloków na wątek
   uint64_t kernelChunkCount = THREADS * BLOCKS;
@@ -154,18 +177,14 @@ void processChunks(uint64_t chunkSize, uint64_t chunkCount, uint64_t chunkOffset
 
   // alokacja pamięci na wynikową tablicę
   size_t isPrimeBytes;
-  BYTE *isPrimeArrays = createBitearrays(chunkPrimeCount, &isPrimeBytes, kernelChunkCount);
+  unsigned char *isPrimeArrays = createBitearrays(chunkPrimeCount, &isPrimeBytes, kernelChunkCount);
 
   // alokacja pamięci na liczbę znalezionych liczb pierwszych
   uint64_t *primeCounts;
   cudaMalloc(&primeCounts, sizeof(uint64_t) * kernelChunkCount);
 
-  // liczba zakończonych chunków
-  uint64_t totalChunksProcessed = 0;
 }
 
-
->>>>>>> 8e42a570e0cb93d011bf2f8d2b4c015cdf4be159
 int main() {
     uint64_t count=100;
     std::cin>>count;
