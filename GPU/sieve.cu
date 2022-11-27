@@ -1,7 +1,20 @@
+#include <atomic>
+#include <chrono>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <sys/time.h>
+#include <pthread.h>
+#include <thread>
 
-#define BYTE unsigned char
+#define THREADS 256
+#define BLOCKS 16
+
+inline unsigned char bitarray_get(unsigned char *bitarray, size_t index) {
+    size_t byte = index / 8;
+    size_t offset_mask = 1 << (7 - (index % 8));
+    return bitarray[byte] & offset_mask;
+}
 
 
 /**
@@ -102,7 +115,111 @@ __global__ void sieve_chunk_gpu(BYTE *isPrimeArrays, size_t isPrimeBytes,
       primeCounts[index] = primeCount;
 }
 
+<<<<<<< HEAD
+=======
+
+/**
+ * @brief Funkcja która zarządza chunkami
+ * 
+ * @param chunkSize rozmiar chunka
+ * @param chunkCount liczba chunków
+ * @param chunkOffset offset chunków
+ * @param chunkPrimeCount max ilość liczb pierwszych w chanku
+ * @param seedPrimes potencjalne liczby pierwsze
+ * @param seedPrimeCount  ilość potencjalnych liczb pierwszych
+ * @param chunkPrimeCounts tu zapisywana jest informacja ile liczb pierwszych udało się znaleźć
+ * @param processedChunks dodatkowa informacja jak wiele chunków zostało zakończonych
+ */
+void processChunks(uint64_t chunkSize, uint64_t chunkCount, uint64_t chunkOffset, 
+                    uint64_t chunkPrimeCount, uint64_t *seedPrimes, uint64_t seedPrimeCount, 
+                    uint64_t *chunkPrimeCounts, atomic<uint64_t> *processedChunks) {
+
+  // liczba chunków: liczba wątków * liczba bloków na wątek
+  uint64_t kernelChunkCount = THREADS * BLOCKS;
+
+  // liczba wywołań jądra
+  uint64_t invocations = 1;
+
+  // korekcja liczby wywołań
+  if (chunkCount < kernelChunkCount) 
+    kernelChunkCount = chunkCount;
+  else 
+    invocations = chunkCount / kernelChunkCount + ((chunkCount % kernelChunkCount) > 0);
+
+  uint64_t *seedPrimesLocal;
+  size_t seedPrimesSize = sizeof(uint64_t) * seedPrimeCount;
+
+  // alokacja pamięci
+  cudaMalloc(&seedPrimesLocal, seedPrimesSize);
+
+  // alokacja pamięci na wynikową tablicę
+  size_t isPrimeBytes;
+  BYTE *isPrimeArrays = createBitearrays(chunkPrimeCount, &isPrimeBytes, kernelChunkCount);
+
+  // alokacja pamięci na liczbę znalezionych liczb pierwszych
+  uint64_t *primeCounts;
+  cudaMalloc(&primeCounts, sizeof(uint64_t) * kernelChunkCount);
+
+  // liczba zakończonych chunków
+  uint64_t totalChunksProcessed = 0;
+}
+
+
+>>>>>>> 8e42a570e0cb93d011bf2f8d2b4c015cdf4be159
 int main() {
-  printf("%d\n", 0);
-  return 0;
+    uint64_t count=100;
+    std::cin>>count;
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    // górna granica zadana
+    uint64_t upperBound=count;
+    // zakres pierwotnych liczb pierwszych
+    uint64_t chunkSize = (uint64_t) sqrt((double) upperBound);
+    // dopełnienie do najbliższej gornej granicy mającej calkowity pierwiastek
+    if(chunkSize*chunkSize < upperBound){
+        chunkSize++;
+        upperBound=chunkSize*chunkSize;
+    }
+    // wielkosc tablicy do liczenia liczb pierwszych wymaganych dla gpu
+    uint64_t chunkCount = chunkSize - 1;
+    // wielkosc segmentu dla gpu
+    uint64_t chunkPrimeCount = chunkSize / 2 + chunkSize % 2;
+    // liczba liczb pierwszych w segmencie
+    uint64_t *chunkPrimeCounts;
+    // liczby pierwsze z do sqrt(gorna granica)
+    uint64_t *seedPrimes;
+    // liczba liczb pierwszych do sqrt(gorna granica)
+    uint64_t seedPrimeCount;
+    // sprawdzone segmenty
+    uint64_t totalChunksChecked;
+    // liczba znalezionych liczb pierwszych
+    uint64_t foundPrimes;
+
+    if(upperBound<50013184){ // umowna granica oplacalnosci inicjalizacji gpu
+        // obliczenie za pomocą CPU, inicjalizacja obliczen na GPU zbyt kosztowna dla tego zakresu
+        startingSieve(upperBound,&seedPrimes,&seedPrimeCount);
+        foundPrimes=seedPrimeCount;
+        free(seedPrimes);
+    }else{
+        std::cout<<"Processing " << chunkCount << " chunks. Up to " << upperBound << std::endl;
+        //obliczenie za pomocą CPU liczb pierwszych potrzebnych dla obliczen GPU
+        startingSieve(chunkSize, &seedPrimes, &seedPrimeCount);
+
+        chunkPrimeCounts = (uint64_t *) calloc(sizeof(uint64_t), chunkCount);
+        // obliczenia na GPU
+        processChunks(chunkSize, chunkCount, 0, chunkPrimeCount, seedPrimes, seedPrimeCount, chunkPrimeCounts);
+            
+        totalChunksChecked = 0;
+        foundPrimes = seedPrimeCount;
+        //zliczanie liczb pierwszych z segmentów
+        for (size_t j = 0; j < chunkCount; j++) {
+            foundPrimes += chunkPrimeCounts[j];      
+            totalChunksChecked++;
+        }   
+    }
+
+    auto stop = std::chrono::high_resolution_clock::now();
+    std::cout<<"amount of primes: " << foundPrimes << " found i time: " << std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count() << " ms" <<std::endl;
+    return 0;
 }
