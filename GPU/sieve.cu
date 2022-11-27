@@ -182,6 +182,32 @@ void processChunks(uint64_t chunkSize, uint64_t chunkCount, uint64_t chunkOffset
   // alokacja pamięci na liczbę znalezionych liczb pierwszych
   uint64_t *primeCounts;
   cudaMalloc(&primeCounts, sizeof(uint64_t) * kernelChunkCount);
+    
+  // liczba zakończonych chunków
+  uint64_t totalChunksProcessed = 0;
+  
+  for (uint64_t i = 0; i < invocations; i++) {
+        //przesunięcie, które zwiększa się wraz z liczbą wątków 
+        uint64_t offset = i * kernelChunkCount;
+        //zmienna przechoująca liczbę pozostałych wątków
+        uint64_t remaining_chunks = chunkCount - offset;
+
+        //warunek sprawdzający czy liczba pozostałych wąktów nie większa od liczby maksymalnej wątków 
+        if (remaining_chunks > kernelChunkCount) {
+         remaining_chunks = kernelChunkCount;
+        }
+
+        offset += chunkOffset;
+
+        //Wywołanie nowego wątku
+        sieveChunk<<<THREADS, BLOCKS>>>(
+            isPrimeArrays, isPrimeBytes,
+            chunkPrimeCount, primeCounts,
+            seedPrimes, seedPrimeCount,
+            chunkSize, remaining_chunks, offset
+        );
+
+    }
 
 }
 
